@@ -103,26 +103,27 @@
         [(< ?score 0.4)]]} db))
 
 (defn transact-edn-file []
-  (dorun  (->> (map edn/read-string (filter (comp not empty?) (line-seq (io/reader "edn/forum.edn"))))
-               (map #(dissoc % :beitrag/antworten))
-               (map #(assoc %2 :db/id %1) (tempids))
-               (partition 100)
-               (map #(d/transact conn %)))))
+  (->> (map edn/read-string (filter (comp not empty?) (line-seq (io/reader "edn/forum.edn"))))
+       (map #(dissoc % :beitrag/antworten))
+       (map #(assoc %2 :db/id %1) (tempids))
+       (partition 200)
+       (map #(d/transact conn %))))
 
 (defn transact-edn-links []
-  (dorun (->> (map edn/read-string (filter (comp not empty?) (line-seq (io/reader "edn/forum.edn"))))
-              (map #(select-keys % [:db/id :beitrag/id :beitrag/antworten]))
-              (map #(assoc %2 :db/id %1) (tempids))
-              (map (fn [b] (update-in b [:beitrag/antworten] #(filter (comp not nil?) (for [x %]
-                                                                                       (ffirst (qbeitrag (d) x)))))))
-              (partition 100)
-              (map #(d/transact conn %)))))
+  (->> (map edn/read-string (filter (comp not empty?) (line-seq (io/reader "edn/forum.edn"))))
+       (map #(select-keys % [:db/id :beitrag/id :beitrag/antworten]))
+       (map #(assoc %2 :db/id %1) (tempids))
+       (map (fn [b] (update-in b [:beitrag/antworten] #(filter (comp not nil?) (for [x %]
+                                                                                (ffirst (qbeitrag (d) x)))))))
+       (partition 100)
+       (map #(d/transact conn %))))
 
 ;;TODO: compute parents beforehando
 (defn init-forum-db! []
-  (load-schema)
-  (transact-edn-file)
-  (transact-edn-links)
+  (dorun
+   (load-schema)
+   (transact-edn-file)
+   (transact-edn-links))
   ;; (mark-forum-ham!)
   ;; (mark-forum-spam!)
   )
