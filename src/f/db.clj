@@ -30,7 +30,7 @@
   (java.util.Date.))
 
 (def uri "datomic:free://localhost:4334/forum32")
-(def uri2 "datomic:free://localhost:4334/fforum32")
+(def uri2 (if production?  "datomic:free://localhost:4334/forum" "datomic:free://localhost:4334/fforum32"))
 
 (d/create-database uri)
 (d/create-database uri2)
