@@ -3,12 +3,15 @@
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :main forum.core
+;;  :main f.core
   :dependencies [[org.clojure/clojure "1.5.0"]
                  [com.datomic/datomic-free "0.8.4111"]
-                 [compojure "1.1.5"]
-                 [crate "0.2.4"]
-                 [incanter/incanter-core "1.3.0"]
+                 [compojure "1.2.0-SNAPSHOT"]
+                 ;; [crate "0.2.4"]
                  [hiccup "1.0.3"]
-                 [ring/ring-jetty-adapter "1.1.8"]
-                 [enlive "1.1.1"]])
+                 [incanter/incanter-core "1.3.0"]
+                 [enlive "1.1.4"]
+                 [ring/ring-jetty-adapter "1.1.7"]]
+  :ring {:handler f.handler/app}
+  :repl-options {:port 9999}
+  :uberjar-exclusions [#"(?i)^META-INF/[^/]*\.SF$"])

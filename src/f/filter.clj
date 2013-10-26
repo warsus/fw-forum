@@ -1,6 +1,7 @@
 (ns f.filter
-  (:use [f.db :only [qspamtext qhamtext d]])
-  (:require [incanter.stats :as stats]))
+  (:use [f.db :only [qspamtext d qbeitrag qindexraw qbeitragvon qhamtext]])
+  (:require [incanter.stats :as stats]
+            [datomic.api :as d]))
 
 (def max-ham-score 0.4)
 (def min-spam-score 0.6)
@@ -19,7 +20,7 @@
    (>= score min-spam-score) :spam
    :else :unsure))
 
-(defn words [text] (re-seq #"[a-z]+" (.toLowerCase text)))
+(defn words [text] (re-seq #" [a-z]+ " (.toLowerCase text)))
 
 ;;TODO :count should be equal to all ffrequencies
 (defn stats [text type]
@@ -61,7 +62,6 @@ count it as). Defaults to 1/2 and 1."
         (* -2 (reduce + (map #(Math/log %1) probs)))
         :df (* 2 num))))
 
-
 ;;TODO filter if in db crap
 (defn score [db features]
   (let [spam-probs (map #(bayesian-spam-probability db %) features)
@@ -72,7 +72,8 @@ count it as). Defaults to 1/2 and 1."
     (/ (+ (- 1 h) s) 2)))
 
 (defn feature-known [db feature]
-  (contains? (:spam db) feature))
+  (or (contains? (:spam db) feature)
+      (contains? (:ham db) feature)))
 
 (defn classify [text]
   "Returns a vector of the form [classification score]"
@@ -82,13 +83,14 @@ count it as). Defaults to 1/2 and 1."
          (filter #(feature-known spam-db %))
          (score spam-db))))
 
-
-
 (defn init-spam-db! []
-  (train! (take 1000 (map first (qspamtext (d)))) :spam)
-  (train! (take 1000 (map first (qhamtext (d)))) :ham))
+  (train! (map first (qspamtext (d))) :spam)
+  (train! (map first (qhamtext (d))) :ham))
 
-(defn classify-id [id]
-  (let [db (d)] (map #(classify (nth (first (qbeitrag db %)) 4)) (ffirst (qindex db)))))
+(defn classify-id []
+  (let [db (d)] (map #(classify (:beitrag/text %)) (qindexraw db))))
+
+(defn classify-entities [es]
+    (let [db (d)] (map #(classify (:beitrag/text %)) es)))
 
 
