@@ -21,7 +21,7 @@
 
 (defn html-index-liste [bs]
   (map (fn [{titel :beitrag/titel user :beitrag/user id :beitrag/id}] [:ul [:li [:a {:href (message-id->message-link id)} titel] [:b user]]])
-   bs))
+       bs))
 
 (en/deftemplate message "template-message.html"
   [ctxt]
@@ -45,24 +45,29 @@
   (-> e
       (select-keys [:beitrag/titel :beitrag/text :beitrag/user :beitrag/datum])
       (assoc :beitrag/antworten (hc/html (map html-antworten-liste (:beitrag/antworten e))))
-      (assoc :vorgaenger (hc/html (map html-vorgaenger (db/qparents3 e))))
+      (assoc :vorgaenger (hc/html (map html-vorgaenger (db/qparents e))))
       (rename-keys {:beitrag/titel :titel :beitrag/text :text :beitrag/antworten :antworten :beitrag/user :user :beitrag/datum :datum})))
 
 (def formatter (org.joda.time.format.DateTimeFormat/forPattern "yyyy-MM-dd"))
 
 (defroutes ^{:private true} routes
   (GET "/" []
-       (let [db (db/fd)
+       (let [db (db/d)
              ctxt {:index (hc/html [:ul (html-index-liste (db/qindexraw db))])}]
          (index ctxt)))
   (GET "/index/:page" [page]
        (let [page (read-string page)
-             db (db/fd)
+             db (db/d)
              ctxt {:index (hc/html [:ul (html-index-liste (db/qindexraw db page))])}]
          (index ctxt)))
+  (GET "/von/:name" [name]
+       (let [db (db/d)]
+         (hc/html [:ul (map (comp
+                             (fn [{id :beitrag/id titel :beitrag/titel}] [:li [:a {:href (message-id->message-link id)} titel]])
+                             #(db/e db %) #(nth % 2)) (db/qbeitragvon db name))])))
   (GET "/message/:id" [id]
        (let [id (read-string id)
-             db (db/fd)
+             db (db/d)
              message-entity (d/touch (d/entity db (ffirst (db/qbeitrag db id))))
              ctxt (message-entity->ctxt db  message-entity)]
          (message ctxt)))
@@ -71,7 +76,7 @@
   (GET "/aktuell.php" {{tag1 :tag_1 tag2 :tag_2} :params}
        (let [tag1 (.parseDateTime formatter tag1)
              tag2 (.parseDateTime formatter tag2)
-             ctxt {:index (hc/html [:ul (html-index-liste (db/qwithin (db/fd) tag1 tag2))])}]
+             ctxt {:index (hc/html [:ul (html-index-liste (db/qwithin (db/d) tag1 tag2))])}]
          ;; (pr-str tag1)
          (index ctxt)))
   (POST "/beitrag.php" []
@@ -84,3 +89,4 @@
 
 (defn start []
   (defonce server (run-jetty #'app {:port 8888 :join? false})))
+

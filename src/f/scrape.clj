@@ -54,6 +54,28 @@
   (for [i (range 2)]
     (.write (.getContent (java.net.URL. (str "http://forum.freiwirtschaft.org/forum.php?seite=" i))) (java.io.FileOutputStream. (str i)))))
 
+(defn mark-spam! [db bids]
+  @(d/transact conn (map
+                     (fn [bid] {:db/id (d/tempid :db.part/user)
+                               :beitrag/id bid
+                               :beitrag/spam true})
+                     bids)))
+
+(defn mark-ham! [db bids]
+  @(d/transact conn  (take 200 (drop 400 (map
+                                   (fn [bid] {:db/id (d/tempid :db.part/user)
+                                             :beitrag/id bid
+                                             :beitrag/spam false})
+                                   bids)))))
+
+(defn mark-forum-ham! []
+  (mark-ham! (d) (map first (q {:find '[?bid]
+                                 :where '[[?b :beitrag/id ?bid] [(< ?bid 7844)]]} (d)))))
+
+(defn mark-forum-spam! []
+  (mark-spam! (d) (map first (q {:find '[?bid]
+                                 :where '[[?b :beitrag/id ?bid] [(> ?bid 411223)]]} (d)))))
+
 (defn init-forum-test-db! []
   (load-schema)
   (init-drive! (take 1000 (map #(.getName %) (.listFiles scrape-dir))))
@@ -105,6 +127,8 @@
         m (update-in m [:beitrag/antworten] #(map :beitrag/id %))]
     (.write writer (str m "\n"))
     (.flush writer)))
+
+
 
 (defn find-mark-spam! [db]
   (let [writer (io/writer "spam.edn")
@@ -170,11 +194,11 @@
 (defn init-filtered-db! []
   (dorun
    (do
-     (d/delete-database uri2)
-     (d/create-database uri2)
-     (dosync (ref-set fconn (d/connect uri2)))
-     (load-schema @fconn)
-     (transact-edn-file @fconn "ham.edn"))))
+     (d/delete-database uri)
+     (d/create-database uri)
+     (dosync (ref-set conn (d/connect uri)))
+     (load-schema @conn)
+     (transact-edn-file @conn "ham.edn"))))
 
 (defn letter-frequencies [] (frequencies (apply concat (mapcat (comp words first) (qhamtext (d))))))
 (defn adjacent-frequency []

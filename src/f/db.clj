@@ -29,29 +29,26 @@
 (defn now []
   (java.util.Date.))
 
-(def uri "datomic:free://localhost:4334/forum32")
-(def uri2 (if production?  "datomic:free://localhost:4334/forum" "datomic:free://localhost:4334/fforum32"))
+(def uri  "datomic:sql://forum?jdbc:postgresql://localhost:5432/datomic?user=datomic&password=datomic")
+
 
 (d/create-database uri)
-(d/create-database uri2)
 
 (def conn
   (ref (d/connect uri)))
 
-(def fconn
-  (ref (d/connect uri2)))
-
 (defn d []
   (db @conn))
 
-(defn fd []
-  (db @fconn))
+(defn beitrag->hash [id]
+  (d/touch (e (d) id)))
 
 (defn load-schema [conn]
   (let [schema
         [{:db/id #db/id[:db.part/db]
           :db/ident :beitrag/text
           :db/valueType :db.type/string
+          :db/fulltext true
           :db/cardinality :db.cardinality/one
           :db/doc "Beitrag text"
           :db.install/_attribute :db.part/db}
@@ -63,6 +60,7 @@
           :db.install/_attribute :db.part/db}
          {:db/id #db/id[:db.part/db]
           :db/ident :beitrag/titel
+          :db/fulltext true
           :db/valueType :db.type/string
           :db/cardinality :db.cardinality/one
           :db/doc "Beitrag titel"
@@ -70,6 +68,7 @@
          {:db/id #db/id[:db.part/db]
           :db/ident :beitrag/user
           :db/valueType :db.type/string
+          :db/fulltext true
           :db/cardinality :db.cardinality/one
           :db/doc "Beitrag titel"
           :db.install/_attribute :db.part/db}
@@ -126,10 +125,17 @@
     [(get e :beitrag/id) (get e :beitrag/titel) (get e :beitrag/user)]))
 
 (defn qbeitragvon ([db user]
-                     (q {:find '[?b ?bid]
+                     (q {:find '[?user ?bid ?b]
                          :in '[$ ?user]
                          :where '[[?b beitrag/id ?bid]
                                   [?b beitrag/user ?user]]} db user)))
+
+(defn qbeitragvonmatch ([db pattern]
+                     (q {:find '[?user]
+                         :in '[$ ?pattern]
+                         :where '[[?b beitrag/id ?bid]
+                                  [(fulltext $ :beitrag/user ?pattern) [[?b ?user]]
+                                   ]]} db pattern)))
 
 (defn qantworten
   ([db]
@@ -148,23 +154,8 @@
                     [?b1 :beitrag/antworten ?b2]
                     [parent ?b2 ?b3]]])
 
-(defn qparents3 [e]
+(defn qparents [e]
   (reverse (take-while #(not (nil? %)) (rest (iterate #(first (:beitrag/_antworten %)) e)))))
-
-(defn qparents
-  ([db bid]
-     (q {:find '[?bid2 ?titel ?user ?pid]
-         :in '[$ % ?bid]
-         :where '[[parent ?pid ?bid]
-                  [?pid :beitrag/id  ?bid2]
-                  [?pid :beitrag/titel ?titel]
-                  [?pid :beitrag/user ?user]]} db parent-rule bid))
-  ([db] (q {:find '[?pid ?titel ?user ?bid2]
-            :in '[$ %]
-            :where '[[parent ?pid ?bid]
-                     [?pid :beitrag/titel ?titel]
-                     [?pid :beitrag/id  ?bid2]
-                     [?pid :beitrag/user ?user]]} db parent-rule)))
 
 (defn within [intervall datum]
   (.contains intervall (.getTime datum)))
@@ -188,13 +179,13 @@
                [?bid2 :beitrag/text ?text2]
                [(= ?text1 ?text2)]]} db))
 
-(defn mark-ham! [db bids]
-  (dorun
-   @(d/transact conn (map
-                      (fn [bid] {:db/id (d/tempid :db.part/user)
-                                :beitrag/id 1
-                                :beitrag/spam false})
-                      bids))))
+;; (defn mark-ham! [db bids]
+;;   (dorun
+;;    @(d/transact conn (map
+;;                       (fn [bid] {:db/id (d/tempid :db.part/user)
+;;                                 :beitrag/id 1
+;;                                 :beitrag/spam false})
+;;                       bids))))
 
 (defn qspam [db]
   (q {:find '[?id]
@@ -232,28 +223,6 @@
                [?id :beitrag/id ?bid]
                [?id :beitrag/text ?text]]} db))
 
-(defn mark-spam! [db bids]
-  @(d/transact conn (map
-                     (fn [bid] {:db/id (d/tempid :db.part/user)
-                               :beitrag/id bid
-                               :beitrag/spam true})
-                     bids)))
-
-(defn mark-ham! [db bids]
-  @(d/transact conn  (take 200 (drop 400 (map
-                                   (fn [bid] {:db/id (d/tempid :db.part/user)
-                                             :beitrag/id bid
-                                             :beitrag/spam false})
-                                   bids)))))
-
-(defn mark-forum-ham! []
-  (mark-ham! (d) (map first (q {:find '[?bid]
-                                 :where '[[?b :beitrag/id ?bid] [(< ?bid 7844)]]} (d)))))
-
-(defn mark-forum-spam! []
-  (mark-spam! (d) (map first (q {:find '[?bid]
-                                 :where '[[?b :beitrag/id ?bid] [(> ?bid 411223)]]} (d)))))
-
 (defn qe [db [[s p o :as c] & clauses]]
   (q {:find [s]
       :where (cons c clauses)} db))
@@ -263,3 +232,32 @@
 
 (defn dtid [id]
   (dt (ffirst (qbeitrag (d) id))))
+
+(defn qbeitragvonmit [db user pattern]
+  (q {:find '[?id ?bid]
+      :where '[[?id :beitrag/id ?bid]
+               [?id :beitrag/user ?user]
+             [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
+      :in '[$ ?user ?pattern]} db user pattern))
+
+(defn qbeitragtext [db pattern]
+  (q {:find '[?id]
+      :where '[[?id :beitrag/id ?bid]
+                 [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
+      :in '[$ ?pattern]} db pattern))
+
+(defn qusers [db]
+  (map first (q {:find '[?user]
+                 :where '[[?id :beitrag/user ?user]]}
+                db)))
+
+(defn qusersposts [db user])
+
+
+
+(defn dump-text [user]
+  (map (comp #(spit user % :append true) pr-str beitrag->hash) (map #(nth % 2) (qbeitragvon (d) user))))
+;; (defn qtext [db text]
+;;   (q {:find }))
+
+

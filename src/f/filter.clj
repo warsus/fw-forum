@@ -20,7 +20,7 @@
    (>= score min-spam-score) :spam
    :else :unsure))
 
-(defn words [text] (re-seq #" [a-z]+ " (.toLowerCase text)))
+(defn words [text] (re-seq #" \w+ " (.toLowerCase text)))
 
 ;;TODO :count should be equal to all ffrequencies
 (defn stats [text type]
@@ -92,5 +92,3 @@ count it as). Defaults to 1/2 and 1."
 
 (defn classify-entities [es]
     (let [db (d)] (map #(classify (:beitrag/text %)) es)))
-
-
