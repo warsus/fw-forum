@@ -20,22 +20,17 @@
         ;; RFC3339 says to use -00:00 when the timezone is unknown (+00:00 implies a known GMT)
         (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))))))
 
-(def production?
-  (= "production" (get (System/getenv) "APP_ENV")))
-
-(def development?
-  (not production?))
-
 (defn now []
   (java.util.Date.))
 
 (def uri  "datomic:sql://forum?jdbc:postgresql://localhost:5432/datomic?user=datomic&password=datomic")
 
-
-(d/create-database uri)
-
 (def conn
   (ref (d/connect uri)))
+
+(defn init-db []
+  (d/create-database uri)
+  (dosync (ref-set conn (d/connect uri))))
 
 (defn d []
   (db @conn))
