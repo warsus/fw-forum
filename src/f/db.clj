@@ -155,56 +155,6 @@
      (map #(d/entity db (:e %)) (reverse (take-last 50 (d/datoms db :avet :beitrag/id)))))
   ([db page] (map #(d/entity db (:e %)) (reverse (take 50 (take-last (* page 50) (d/datoms db :avet :beitrag/id)))))))
 
-(defn qduplicates [db]
-  (q {:find '[?bid1 ?bid2]
-      :where '[[?bid1 :beitrag/text ?text1]
-               [?bid2 :beitrag/text ?text2]
-               [(= ?text1 ?text2)]]} db))
-
-;; (defn mark-ham! [db bids]
-;;   (dorun
-;;    @(d/transact conn (map
-;;                       (fn [bid] {:db/id (d/tempid :db.part/user)
-;;                                 :beitrag/id 1
-;;                                 :beitrag/spam false})
-;;                       bids))))
-
-(defn qspam [db]
-  (q {:find '[?id]
-      :where '[[?id :beitrag/spam true]
-               [?id :beitrag/id ?bid]]} db))
-
-(defn qham [db]
-  (q {:find '[?id]
-      :where '[[?id :beitrag/spam false]
-               [?id :beitrag/id ?bid]]} db))
-
-(defn words [text] (re-seq #"[a-z]+" (.toLowerCase text)))
-
-(defn wc [text] (count (words text)))
-
-(defn word-frequencies [text]
-  (if (string? text) (frequencies (words text))
-      (reduce #(merge-with + %1 %2) (map word-frequencies text))))
-
-(defn qfeatures [db word]
-  (q {:find '[(sum ?wc)]
-      :in '[$ ?word]
-      :where '[[_ :beitrag/text ?text]
-               [(f.db/wc ?text) ?wc]]} db word))
-
-(defn qspamtext [db]
-  (q {:find '[?text]
-      :where '[[?id :beitrag/spam true]
-               [?id :beitrag/id ?bid]
-               [?id :beitrag/text ?text]]} db))
-
-(defn qhamtext [db]
-  (q {:find '[?text]
-      :where '[[?id :beitrag/spam false]
-               [?id :beitrag/id ?bid]
-               [?id :beitrag/text ?text]]} db))
-
 (defn qe [db [[s p o :as c] & clauses]]
   (q {:find [s]
       :where (cons c clauses)} db))
