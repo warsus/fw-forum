@@ -63,9 +63,17 @@
           :db.install/_attribute :db.part/db}
          {:db/id (d/tempid :db.part/db)
           :db/ident :beitrag/user
-          :db/valueType :db.type/string
-          :db/fulltext true
+          :db/valueType :db.type/ref
+          :db/index true
           :db/cardinality :db.cardinality/one
+          :db/doc "Beitrag titel"
+          :db.install/_attribute :db.part/db}
+         {:db/id (d/tempid :db.part/db)
+          :db/fulltext true
+          :db/ident :user/name
+          :db/valueType :db.type/string
+          :db/cardinality :db.cardinality/one
+          :db/unique :db.unique/identity
           :db/doc "Beitrag titel"
           :db.install/_attribute :db.part/db}
          {:db/id (d/tempid :db.part/db)
