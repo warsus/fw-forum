@@ -142,54 +142,82 @@
 (defn within [intervall datum]
   (.contains intervall (.getTime datum)))
 
-(defn qwithin [db date1 date2]
-  (let [interval (org.joda.time.Interval. date1 date2)]
-    (q {:find '[?bid]
-        :in  '[$ ?interval]
-        :where '[[?id :beitrag/id ?bid]
-                 [?id :beitrag/datum ?datum]
-                 [(f.db/within ?interval ?datum)]]} db interval)))
+(defn qwithin [db start end]
+  (map (comp #(d/pull (d) '[:beitrag/id :beitrag/user :beitrag/titelq] %) :e) (d/index-range db :beitrag/datum start end)))
 
+;;This seems not very efficient at first glance but works for now
 (defn qindexraw
   ([db]
-     (map #(d/entity db (:e %)) (reverse (take-last 50 (d/datoms db :avet :beitrag/id)))))
+   (map #(d/entity db (:e %)) (reverse (take-last 50 (d/datoms db :avet :beitrag/id)))))
   ([db page] (map #(d/entity db (:e %)) (reverse (take 50 (take-last (* page 50) (d/datoms db :avet :beitrag/id)))))))
-
-(defn qe [db [[s p o :as c] & clauses]]
-  (q {:find [s]
-      :where (cons c clauses)} db))
-
-(defn dt [e]
-  (d/touch (d/entity (d) e)))
-
-(defn dtid [id]
-  (dt (ffirst (qbeitrag (d) id))))
 
 (defn qbeitragvonmit [db user pattern]
   (q {:find '[?id ?bid]
       :where '[[?id :beitrag/id ?bid]
                [?id :beitrag/user ?user]
-             [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
-      :in '[$ ?user ?pattern]} db user pattern))
+               [?user :user/name ?username]
+               [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
+      :in '[$ ?username ?pattern]} db user pattern))
 
 (defn qbeitragtext [db pattern]
   (q {:find '[?id]
       :where '[[?id :beitrag/id ?bid]
-                 [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
+               [(fulltext $ :beitrag/text ?pattern) [[?id]]]]
       :in '[$ ?pattern]} db pattern))
 
-(defn qusers [db]
-  (map first (q {:find '[?user]
-                 :where '[[?id :beitrag/user ?user]]}
-                db)))
+(defn qusers
+  ([db]
+   (q '[:find ?id ?name
+        :where [?id :user/name ?name]]
+      db))
+  ([db name]
+   (q {:find '[?user ?name]
+       :where '[[?user :user/name ?name]]
+       :in '[$ ?name]}
+      db name)))
 
-(defn qusersposts [db user])
+(defn qmatchingusers [db pattern]
+  (q {:find '[?e]
+      :where '[[(fulltext $ :user/name "Ivan") [[?e]]]]
+      :in '[$ ?pattern]} db pattern))
+
+(defn qmatchingusersposts [db pattern]
+  (q {:find '[?b ?e]
+      :where '[[(fulltext $ :user/name "Ivan") [[?e]]]
+               [?b :beitrag/user ?e]
+               [(fulltext $ :beitrag/text " irc ") [[?b]]]]
+      :in '[$ ?pattern]} db pattern))
+
+(defn qrepliestouser [db uid]
+  (q {:find '[?bid2]
+      :in '[[$ ?uid]]
+      :where '[[?bid :beitrag/user ?uid]
+               [?bid :beitrag/antworten ?bid2]]} db uid))
+
+(def conversation-rule
+  '[[[conversation ?b1 ?u1 ?u2]
+     [?b1 :beitrag/user ?u1]
+     [?b2 :beitrag/user ?u2]
+     [?b1 :beitrag/antworten ?b2]]
+    [[conversation ?b1 ?u2 ?u1]
+     [?b1 :beitrag/user ?u1]
+     [?b2 :beitrag/user ?u2]
+     [?b1 :beitrag/antworten ?b2]]])
 
 
 
-(defn dump-text [user]
-  (map (comp #(spit user % :append true) pr-str beitrag->hash) (map #(nth % 2) (qbeitragvon (d) user))))
-;; (defn qtext [db text]
-;;   (q {:find }))
+(defn conversations-of
+  ([db u1 u2]
+   (q {:find '[?bid]
+       :where '[[conversation ?bid ?u1 ?u2]]
+       :in '[$ % ?u1 ?u2]} db conversation-rule u1 u2))
+  ([db u1]
+      (q {:find '[?u2]
+       :where '[[conversation ?bid ?u1 ?u2]]
+       :in '[$ % ?u1]} db conversation-rule u1)))
 
-
+(defn conversations-of-names
+  ([db u1 u2]
+   (conversations-of db (:db/id (d/entity (d) [:user/name u1])) (:db/id (d/entity (d) [:user/name u2]))))
+  ([db u1]
+      (conversations-of db (:db/id (d/entity (d) [:user/name u1])))))
