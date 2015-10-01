@@ -7,7 +7,8 @@
         f.db
         f.frequency
         [clojure.java.io :as io]
-        [f.filter :only [init-spam-db! classify]]))
+        ;; [f.filter :only [init-spam-db! classify]]
+        ))
 
 (def scrape-dir (io/file "scrape"))
 (def *base-url* "http://forum.freiwirtschaft.org/forum.php?seite=")
@@ -81,7 +82,8 @@
   (init-drive! (take 1000 (map #(.getName %) (.listFiles scrape-dir))))
   (mark-forum-ham!)
   (mark-forum-spam!)
-  (init-spam-db!))
+  ;;(init-spam-db!)
+  )
 
 (defn directory->file []
   (let [os (io/writer "forum.edn")
@@ -107,8 +109,8 @@
               (catch NullPointerException e1 nil))
             (recur (inc i)))))))
 
-(defn is-spam [e]
-  (or (not (contains? e :beitrag/text)) (> (f.filter/classify (:beitrag/text e)) 0.6)))
+;; (defn is-spam [e]
+;;   (or (not (contains? e :beitrag/text)) (> (f.filter/classify (:beitrag/text e)) 0.6)))
 
 (defn word-probability [word]
   (apply * (map #(get adjacent-probabilities (apply str %) 1e-50) (partition 2 1 word))))
@@ -157,56 +159,44 @@
     (.close writer)
     true))
 
-(defn map->transaction [e]
-  (as-> (assoc e :db/id (d/tempid :db.part/user)) e
-        (let [{as :beitrag/antworten} e
-              tempids (take (count as) (tempids))]
-          (cons (assoc e :beitrag/antworten tempids) (map (fn [a id] {:beitrag/id a :db/id id}) as tempids)))))
+(defn map->transaction [{name :beitrag/user :as e}]
+  (let [uid (d/tempid :db.part/user)]
+    (as-> (assoc e :db/id (d/tempid :db.part/user)) e
+          (update-in e [:beitrag/user :user/name] #(or % ""))
+          (let [{as :beitrag/antworten} e
+                tempids (take (count as) (tempids))]
+            (cons (assoc e :beitrag/antworten tempids) (map (fn [a id] {:beitrag/id a :db/id id}) as tempids))))))
 
 (def count-tx (ref 0))
+(def chunk! (ref nil))
 
 (defn transact-edn-file [conn name]
   (dosync ref-set count-tx 0)
-  (->> (map
-        edn/read-string (filter (comp not empty?) (line-seq (io/reader name))))
-       (partition 100)
-       (map (fn [chunck]
-              (dosync (alter count-tx inc))
-              ((fn foo [x]
-                 (if (> x 10) (throw (Exception. "Timeout")))
-                 (try @(d/transact conn (mapcat map->transaction chunck))
-                      (catch Exception e (do (print x) (Thread/sleep 5000) (foo (inc x)))))) 0)))))
-
-(defn init-forum-db! []
-  (dorun
-   (do
-     (d/delete-database uri)
-     (d/create-database uri)
-     (dosync (ref-set conn (d/connect uri)))
-     (load-schema @conn)
-     (transact-edn-file @conn "forum.edn")
-     ;; (mark-forum-ham!)
-     ))
-  ;; (mark-forum-spam!)
-  )
+  (doseq [line (line-seq (io/reader "ham2.edn"))]
+    (->> line
+         read-string
+         ;; (print @count-tx " ")
+         ;; (dosync (alter count-tx inc))
+         map->transaction
+         (d/transact conn)
+         deref)))
 
 ;;TODO: compute parents beforehando
 (defn init-filtered-db! []
   (dorun
-   (do
-     (d/delete-database uri)
-     (d/create-database uri)
-     (dosync (ref-set conn (d/connect uri)))
-     (load-schema @conn)
-     (transact-edn-file @conn "ham.edn"))))
+   ;; (d/delete-database uri)
+   ;; (d/create-database uri)
+   ;; (dosync (ref-set conn (d/connect uri)))
+   ;; (load-schema @conn)
+   (transact-edn-file @conn "ham2.edn")))
 
-(defn letter-frequencies [] (frequencies (apply concat (mapcat (comp words first) (qhamtext (d))))))
-(defn adjacent-frequency []
-  (frequencies
-   (for [qresults (qhamtext (d))
-         word    (words (first qresults))
-         pairs    (partition 2 1 word)]
-     (apply str pairs))))
+;; (defn letter-frequencies [] (frequencies (apply concat (mapcat (comp words first) (qhamtext (d))))))
+;; (defn adjacent-frequency []
+;;   (frequencies
+;;    (for [qresults (qhamtext (d))
+;;          word    (words (first qresults))
+;;          pairs    (partition 2 1 word)]
+;;      (apply str pairs))))
 
 (defn probability [m]
   (let [total (apply + (map second m))
@@ -216,4 +206,7 @@
 (def letter-probabilities
   {\a 0.060436323, \b 0.025006518, \c 0.0307059, \d 0.050851054, \e 0.15444924, \f 0.015449124, \g 0.033937804, \h 0.04526603, \i 0.08197057, \j 0.002315321, \k 0.014592584, \l 0.0394331, \m 0.026286412, \n 0.09559016, \o 0.027192589, \p 0.013790551, \q 2.7052648E-4, \r 0.070854835, \s 0.066152126, \t 0.06664402, \u 0.036464754, \v 0.009489809, \w 0.018737635, \x 0.001682247, \y 0.0016642056, \z 0.010766553})
 
-
+(defn migrate-file []
+  (let [lines (filter (comp not empty?) (line-seq (io/reader "ham.edn")))]
+    (doseq [line lines]
+      (spit "ham2.edn" (str (update-in (edn/read-string line) [:beitrag/user] (fn [name] {:user/name name :db/id (d/tempid :db.part/user)})) "\n") :append :true))))

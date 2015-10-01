@@ -26,7 +26,7 @@
 (def uri  "datomic:sql://forum?jdbc:postgresql://localhost:5432/datomic?user=datomic&password=datomic")
 
 (def conn
-  (ref (d/connect uri)))
+  (ref nil))
 
 (defn init-db []
   (d/create-database uri)
@@ -221,3 +221,8 @@
    (conversations-of db (:db/id (d/entity (d) [:user/name u1])) (:db/id (d/entity (d) [:user/name u2]))))
   ([db u1]
       (conversations-of db (:db/id (d/entity (d) [:user/name u1])))))
+
+(defn qcount [db]
+  (q '[:find (count ?eid) 
+      :where [?id :beitrag/id]
+      ] db))
